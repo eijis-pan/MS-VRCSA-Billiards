@@ -1,4 +1,6 @@
-﻿using System;
+﻿#define EIJIS_LONG_TABLE
+
+using System;
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
@@ -464,7 +466,11 @@ public class CueController : UdonSharpBehaviour
 
     private void clampTransform(Transform child)
     {
+#if EIJIS_LONG_TABLE
+        child.position = table.transform.TransformPoint(clamp(table.transform.InverseTransformPoint(child.position), -6.0f, 6.0f, 0f, 4f, -3.5f, 3.5f));
+#else        
         child.position = table.transform.TransformPoint(clamp(table.transform.InverseTransformPoint(child.position), -4.25f, 4.25f, 0f, 4f, -3.5f, 3.5f));
+#endif
     }
 
     public GameObject _GetDesktopMarker()

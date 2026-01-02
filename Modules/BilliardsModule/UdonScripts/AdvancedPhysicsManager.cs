@@ -1,4 +1,12 @@
 // #define HT8B_DRAW_REGIONS
+
+#define EIJIS_OCT_POCKETS
+#define EIJIS_DISABLE_POCKET
+
+// #define DEBUG_EIJIS_OCT_POCKETS
+// #define DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+// #define DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+
 using System;
 using UdonSharp;
 using UnityEngine;
@@ -6,7 +14,7 @@ using UnityEngine;
 [UdonBehaviourSyncMode(BehaviourSyncMode.NoVariableSync)]
 public class AdvancedPhysicsManager : UdonSharpBehaviour
 {
-    public string PHYSICSNAME = "<color=#FFD700>Advanced V0.5M</color>";
+    public string PHYSICSNAME = "<color=#FFD700>Advanced V0.5M</color>(CustomPocket)";
     [SerializeField] AudioClip[] hitSounds;
     [SerializeField] AudioClip[] bounceSounds;
     [SerializeField] AudioClip[] cushionSounds;
@@ -107,18 +115,57 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
     float k_POCKET_RESTITUTION;
     private Vector3 k_vE;
     private Vector3 k_vF;
+#if EIJIS_OCT_POCKETS
+    private Vector3 k_vFF;
+#endif
     private Vector3 k_vE2;
     private Vector3 k_vF2;
+#if EIJIS_OCT_POCKETS
+    private Vector3 k_vFF2;
+#endif
     bool furthest_vE;
     bool furthest_vF;
+#if EIJIS_OCT_POCKETS
+    bool furthest_vFF;
+#endif
     bool closest_vE;
     bool closest_vF;
+#if EIJIS_OCT_POCKETS
+    bool closest_vFF;
+#endif
     float r_k_CUSHION_RADIUS;
     private float vertRadiusSQRPE;
 
     private bool jumpShotFlewOver, cueBallHasCollided;
 
     [NonSerialized] public BilliardsModule table_;
+#if EIJIS_DISABLE_POCKET
+#if EIJIS_OCT_POCKETS
+    private byte enable_pockets = 0x3F; // bit 0-3 Corner pockets es-ws-ns-ne (Head is North), 4-5 Side pockets e-w (6-7 additional side pockets s-n)
+#else    
+    private byte disable_pockets = 0x3F; // bit 0-3 Corner pockets es-ws-ns-ne (Head is North), 4-5 Side pockets e-w
+#endif
+    private byte pocket_mask_sides = 0x30; // E,W = 4,5
+    private byte pocket_mask_corners = 0x0F; // ES,SW,NW,NE = 0,1,2,3
+#if EIJIS_OCT_POCKETS
+    private byte pocket_mask_additional_sides = 0xC0; // S,N = 6,7
+    private byte[] pocket_mask_by_signs = new byte[]
+    {
+        0x51, // +x, +z = ES,E,S = 0,4,6
+        0x62, // +x, -z = SW,W,S = 1,5,6
+        0x94, // -x, +z = NW,W,N = 2,5,7
+        0xA8, // -x, -z = NE,E,N = 3,4,7
+    };
+#else    
+    private byte[] pocket_mask_by_signs = new byte[]
+    {
+        0x11, // +x, +z = ES,E = 0,4
+        0x22, // +x, -z = SW,W = 1,5
+        0x24, // -x, +z = NW,W = 2,5
+        0x18, // -x, -z = NE,E = 3,4
+    };
+#endif
+#endif
     public void _Init()
     {
         table = table_;
@@ -608,7 +655,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 
                 Vector3 pocketPos;
                 float pocketRad;
+#if EIJIS_OCT_POCKETS
+                if ((Vector3.SqrMagnitude(absPos - k_vE) < Vector3.SqrMagnitude(absPos - k_vF)) && 
+                    (Vector3.SqrMagnitude(absPos - k_vE) < Vector3.SqrMagnitude(absPos - k_vFF)))
+#else
                 if (Vector3.SqrMagnitude(absPos - k_vE) < Vector3.SqrMagnitude(absPos - k_vF))
+#endif
                 {
                     if (closest_vE)
                     {
@@ -621,6 +673,21 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                         pocketRad = k_INNER_RADIUS_CORNER;
                     }
                 }
+#if EIJIS_OCT_POCKETS
+                else if (Vector3.SqrMagnitude(absPos - k_vFF) < Vector3.SqrMagnitude(absPos - k_vF))
+                {
+                    if (closest_vFF)
+                    {
+                        pocketPos = k_vFF2;
+                        pocketRad = k_INNER_RADIUS_SIDE2;
+                    }
+                    else
+                    {
+                        pocketPos = k_vFF;
+                        pocketRad = k_INNER_RADIUS_SIDE;
+                    }
+                }
+#endif
                 else
                 {
                     if (closest_vF)
@@ -2232,11 +2299,21 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 
     Vector3 k_vA = new Vector3(); // side pocket vert
     Vector3 k_vA_Mirror = new Vector3(); // side pocket vert
+#if EIJIS_OCT_POCKETS
+    Vector3 k_vAA = new Vector3(); // side pocket vert
+    Vector3 k_vAA_Mirror = new Vector3(); // side pocket vert
+#endif
     Vector3 k_vB = new Vector3(); // corner pocket vert (width)
     Vector3 k_vC = new Vector3(); // corner pocket vert (height)
     Vector3 k_vD = new Vector3(); // vert inside side pocket
+#if EIJIS_OCT_POCKETS
+    Vector3 k_vDD = new Vector3(); // vert inside side pocket
+#endif
 
     Vector3 k_vX = new Vector3();
+#if EIJIS_OCT_POCKETS
+    Vector3 k_vXX = new Vector3();
+#endif
     Vector3 k_vY = new Vector3(); // inside of corner pocket
     Vector3 k_vZ = new Vector3(); // inside of corner pocket
     Vector3 k_vW = new Vector3();
@@ -2245,17 +2322,30 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
     Vector3 k_pL = new Vector3();
     Vector3 k_pM = new Vector3();
     Vector3 k_pN = new Vector3(); // side pocket vert + cushion
+#if EIJIS_OCT_POCKETS
+    Vector3 k_pKK = new Vector3();
+    Vector3 k_pLL = new Vector3();
+    Vector3 k_pMM = new Vector3();
+    Vector3 k_pNN = new Vector3(); // side pocket vert + cushion
+#endif
     Vector3 k_pO = new Vector3(); // corner pocket + cushion
     Vector3 k_pP = new Vector3(); // corner pocket + cushion inside
     Vector3 k_pQ = new Vector3(); // corner pocket + cushion inside
     Vector3 k_pR = new Vector3(); // corner pocket + cushion
     Vector3 k_pT = new Vector3();
+#if EIJIS_OCT_POCKETS
+    Vector3 k_pTT = new Vector3();
+#endif
     Vector3 k_pS = new Vector3();
     Vector3 k_pU = new Vector3();
     Vector3 k_pV = new Vector3();
 
     Vector3 k_vA_vD = new Vector3();
     Vector3 k_vA_vD_normal = new Vector3();
+#if EIJIS_OCT_POCKETS
+    Vector3 k_vAA_vDD = new Vector3();
+    Vector3 k_vAA_vDD_normal = new Vector3();
+#endif
 
     Vector3 k_vC_vZ = new Vector3();
     Vector3 k_vB_vY = new Vector3();
@@ -2264,6 +2354,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
     Vector3 k_vC_vZ_normal = new Vector3();
 
     Vector3 k_vA_vB_normal = new Vector3(0.0f, 0.0f, -1.0f);
+#if EIJIS_OCT_POCKETS
+    Vector3 k_vAA_vBB_normal = new Vector3(-1.0f, 0.0f, 0.0f);
+#endif
     Vector3 k_vC_vW_normal = new Vector3(-1.0f, 0.0f, 0.0f);
     Vector3 upRight = new Vector3(1.0f, 0.0f, 1.0f);
 
@@ -2306,13 +2399,52 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         k_vE2 = table.k_vE2; //cornerPocket2
         k_vF = table.k_vF; //sidePocket
         k_vF2 = table.k_vF2; //sidePocket2
+#if EIJIS_OCT_POCKETS
+        k_vFF = new Vector3(k_vF.z - k_TABLE_HEIGHT + k_TABLE_WIDTH, 0, 0);
+        k_vFF2 = new Vector3(k_vF2.z - k_TABLE_HEIGHT + k_TABLE_WIDTH, 0, 0);
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"k_vF = ({k_vF.x},{k_vF.y},{k_vF.z}), k_vF2 = ({k_vF2.x},{k_vF2.y},{k_vF2.z})");
+        table._LogInfo($"k_vFF = ({k_vFF.x},{k_vFF.y},{k_vFF.z}), k_vFF2 = ({k_vFF2.x},{k_vFF2.y},{k_vFF2.z})");
+#endif
+#endif
         k_vE.y = k_vF.y = k_vE2.y = k_vF2.y = 0;
         //work out which pocket point's edge is most distant from center
         furthest_vE = (k_vE.magnitude + k_INNER_RADIUS_CORNER) > (k_vE2.magnitude + k_INNER_RADIUS_CORNER2);
         furthest_vF = (k_vF.magnitude + k_INNER_RADIUS_SIDE) > (k_vF2.magnitude + k_INNER_RADIUS_SIDE2);
+#if EIJIS_OCT_POCKETS
+        furthest_vFF = (k_vFF.magnitude + k_INNER_RADIUS_SIDE) > (k_vFF2.magnitude + k_INNER_RADIUS_SIDE2);
+#endif
         //work out which pocket point's edge is closest to center
         closest_vE = (k_vE.magnitude - k_INNER_RADIUS_CORNER) < (k_vE2.magnitude - k_INNER_RADIUS_CORNER2);
         closest_vF = (k_vF.magnitude - k_INNER_RADIUS_SIDE) < (k_vF2.magnitude - k_INNER_RADIUS_SIDE2);
+#if EIJIS_OCT_POCKETS
+        closest_vFF = (k_vFF.magnitude - k_INNER_RADIUS_SIDE) < (k_vFF2.magnitude - k_INNER_RADIUS_SIDE2);
+#endif
+#if EIJIS_DISABLE_POCKET
+#if EIJIS_OCT_POCKETS
+        enable_pockets = 0x3F;
+        for (int i = 0; i < 8; i++)
+#else    
+        enable_pockets = 0x3F;
+        for (int i = 0; i < 6; i++)
+#endif
+        {
+            if (i < table.disable_pockets.Length)
+            {
+                if (table.disable_pockets[i])
+                {
+                    enable_pockets &= (byte)(~(0x1 << i) & 0xFFu);
+                }
+                else
+                {
+                    enable_pockets |= (byte)(0x1 << i);
+                }
+            }
+        }
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"enable_pockets = 0x{enable_pockets:X2}");
+#endif
+#endif
 
         // Advanced only
         k_RAIL_HEIGHT_UPPER = table.k_RAIL_HEIGHT_UPPER;
@@ -2354,6 +2486,13 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         // Major source vertices
         k_vA.x = k_POCKET_RADIUS_SIDE;
         k_vA.z = k_TABLE_HEIGHT + k_CUSHION_RADIUS;
+#if EIJIS_OCT_POCKETS
+        k_vAA.z = k_POCKET_RADIUS_SIDE;
+        k_vAA.x = k_TABLE_WIDTH + k_CUSHION_RADIUS;
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"k_vA = ({k_vA.x},{k_vA.y},{k_vA.z}), k_vAA = ({k_vAA.x},{k_vAA.y},{k_vAA.z})");
+#endif
+#endif
 
         k_vB.x = k_TABLE_WIDTH;
         k_vB.z = k_TABLE_HEIGHT + k_CUSHION_RADIUS;
@@ -2365,9 +2504,23 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         Vector3 Rotationk_vD = new Vector3(k_POCKET_DEPTH_SIDE, 0, 0);
         Rotationk_vD = Quaternion.AngleAxis(-k_FACING_ANGLE_SIDE, Vector3.up) * Rotationk_vD;
         k_vD += Rotationk_vD;
+#if EIJIS_OCT_POCKETS
+        k_vDD = k_vAA;
+        Vector3 Rotationk_vDD = new Vector3(0, 0, k_POCKET_DEPTH_SIDE);
+        Rotationk_vDD = Quaternion.AngleAxis(k_FACING_ANGLE_SIDE, Vector3.up) * Rotationk_vDD;
+        k_vDD += Rotationk_vDD;
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"k_vB = ({k_vB.x},{k_vB.y},{k_vB.z})");
+        table._LogInfo($"k_vC = ({k_vC.x},{k_vC.y},{k_vC.z})");
+        table._LogInfo($"k_vD = ({k_vD.x},{k_vD.y},{k_vD.z}), k_vDD = ({k_vDD.x},{k_vDD.y},{k_vDD.z})");
+#endif
+#endif
 
         // Aux points
         k_vX = k_vD + Vector3.forward;
+#if EIJIS_OCT_POCKETS
+        k_vXX = k_vDD + Vector3.right;
+#endif
         k_vW = k_vC;
         k_vW.z = 0.0f;
 
@@ -2386,6 +2539,15 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         k_vA_vD = k_vA_vD.normalized;
         k_vA_vD_normal.x = -k_vA_vD.z;
         k_vA_vD_normal.z = k_vA_vD.x;
+#if EIJIS_OCT_POCKETS
+        k_vAA_vDD = k_vDD - k_vAA;
+        k_vAA_vDD = k_vAA_vDD.normalized;
+        k_vAA_vDD_normal.x = k_vAA_vDD.z;
+        k_vAA_vDD_normal.z = -k_vAA_vDD.x;
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"k_vA_vD_normal = ({k_vA_vD_normal.x},{k_vA_vD_normal.y},{k_vA_vD_normal.z}), k_vAA_vDD_normal = ({k_vAA_vDD_normal.x},{k_vAA_vDD_normal.y},{k_vAA_vDD_normal.z})");
+#endif
+#endif
 
         k_vB_vY = k_vB - k_vY;
         k_vB_vY = k_vB_vY.normalized;
@@ -2401,10 +2563,20 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         // Minkowski difference
         k_pN = k_vA;
         k_pN.z -= k_CUSHION_RADIUS;
+#if EIJIS_OCT_POCKETS
+        k_pNN = k_vAA;
+        k_pNN.x -= k_CUSHION_RADIUS;
+#endif
 
         k_pL = k_vD + k_vA_vD_normal * k_CUSHION_RADIUS;
+#if EIJIS_OCT_POCKETS
+        k_pLL = k_vDD + k_vAA_vDD_normal * k_CUSHION_RADIUS;
+#endif
 
         k_pK = k_vD;
+#if EIJIS_OCT_POCKETS
+        k_pKK = k_vDD;
+#endif
         k_pK.x -= k_CUSHION_RADIUS;
 
         k_pO = k_vB;
@@ -2435,6 +2607,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         // also makes table width and height actual equal the playable space on the table
         // k_pM is only used for drawing lines, and this
         k_pM = k_vA + k_vA_vD_normal * k_CUSHION_RADIUS;
+#if EIJIS_OCT_POCKETS
+        k_pMM = k_vAA + k_vAA_vDD_normal * k_CUSHION_RADIUS;
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"k_pM = ({k_pM.x},{k_pM.y},{k_pM.z}), k_pMM = ({k_pMM.x},{k_pMM.y},{k_pMM.z})");
+#endif
+#endif
 
         float sideXdifA = k_vA.x - k_pM.x;
         float sideXdifD = k_vD.x - k_pM.x;
@@ -2452,8 +2630,33 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         k_pL.x = k_pM.x + sideXdifL;
         k_pK.x = k_pM.x + sideXdifK;
         k_vX.x = k_pM.x + sideXdifX;
+#if EIJIS_OCT_POCKETS
+        float sideZdifAA = k_vAA.z - k_pMM.z;
+        float sideZdifDD = k_vDD.z - k_pMM.z;
+        float sideZdifNN = k_pNN.z - k_pMM.z;
+        float sideZdifTT = k_pTT.z - k_pMM.z;
+        float sideZdifLL = k_pLL.z - k_pMM.z;
+        float sideZdifKK = k_pKK.z - k_pMM.z;
+        float sideZdifXX = k_vXX.z - k_pMM.z;
+        k_pNN.z += k_POCKET_RADIUS_SIDE;
+        k_pMM.z = k_pNN.z;
+        k_vAA.z = k_pMM.z + sideZdifAA;
+        k_vDD.z = k_pMM.z + sideZdifDD;
+        k_pNN.z = k_pMM.z + sideZdifNN;
+        k_pTT.z = k_pMM.z + sideZdifTT;
+        k_pLL.z = k_pMM.z + sideZdifLL;
+        k_pKK.z = k_pMM.z + sideZdifKK;
+        k_vXX.z = k_pMM.z + sideZdifXX;
+#if DEBUG_EIJIS_OCT_POCKETS
+        table._LogInfo($"sideXdifA = {sideXdifA}, sideZdifAA = {sideZdifAA}");
+        table._LogInfo($"k_vA = ({k_vA.x},{k_vA.y},{k_vA.z}), k_vAA = ({k_vAA.x},{k_vAA.y},{k_vAA.z})");
+#endif
+#endif
 
         k_vA_Mirror = new Vector3(-k_vA.x, k_vA.y, k_vA.z);
+#if EIJIS_OCT_POCKETS
+        k_vAA_Mirror = new Vector3(k_vAA.x, k_vAA.y, -k_vAA.z);
+#endif
 
         float widthXdifB = k_vB.x - k_pP.x;
         float widthXdifR = k_pO.x - k_pP.x;
@@ -2496,10 +2699,23 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         inPocketBounds = false;
         Vector3 A = balls_P[id];
         Vector3 absA = new Vector3(Mathf.Abs(A.x), 0, Mathf.Abs(A.z));
-
+#if EIJIS_DISABLE_POCKET
+        _sign_pos.x = Mathf.Sign(A.x);
+        _sign_pos.z = Mathf.Sign(A.z);
+        byte pocket_mask_by_sign = pocket_mask_by_signs[((0 > _sign_pos.x && 0 > _sign_pos.z) ? 3 : (0 > _sign_pos.x ? 2 : (0 > _sign_pos.z ? 1 : 0)))];
+#endif
+#if EIJIS_DISABLE_POCKET
+        if (!is4ball && 0 != (enable_pockets & pocket_mask_by_sign))
+#else        
         if (!is4ball)
+#endif
         {
+#if EIJIS_DISABLE_POCKET
+            if (0 != (enable_pockets & pocket_mask_corners) &&
+                (absA - k_vE).sqrMagnitude < k_INNER_RADIUS_CORNER_SQ && (absA - k_vE2).sqrMagnitude < k_INNER_RADIUS_CORNER_SQ2)
+#else        
             if ((absA - k_vE).sqrMagnitude < k_INNER_RADIUS_CORNER_SQ && (absA - k_vE2).sqrMagnitude < k_INNER_RADIUS_CORNER_SQ2)
+#endif
             {
                 inPocketBounds = true;
                 if (A.y < -k_BALL_RADIUS)
@@ -2511,8 +2727,10 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                 else if (A.y < 0.001f)
                 {
                     // while falling down the pocket, check for collisions with the pocket entrance edge
+#if !EIJIS_DISABLE_POCKET
                     _sign_pos.x = Mathf.Sign(A.x);
                     _sign_pos.z = Mathf.Sign(A.z);
+#endif
                     Vector3 pocketPoint;
                     float radius;
                     if (closest_vE)
@@ -2537,7 +2755,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                 }
             }
 
+#if EIJIS_DISABLE_POCKET
+            if (0 != (enable_pockets & pocket_mask_sides) &&
+                (absA - k_vF).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ && (absA - k_vF2).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ2)
+#else        
             if ((absA - k_vF).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ && (absA - k_vF2).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ2)
+#endif
             {
                 inPocketBounds = true;
                 if (A.y < -k_BALL_RADIUS)
@@ -2573,7 +2796,51 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                     }
                 }
             }
+#if EIJIS_OCT_POCKETS
 
+#if EIJIS_DISABLE_POCKET
+            if (0 != (enable_pockets & pocket_mask_additional_sides) &&
+                (absA - k_vFF).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ && (absA - k_vFF2).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ2)
+#else        
+            if ((absA - k_vFF).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ && (absA - k_vFF2).sqrMagnitude < k_INNER_RADIUS_SIDE_SQ2)
+#endif
+            {
+                inPocketBounds = true;
+                if (A.y < -k_BALL_RADIUS)
+                {
+                    table._TriggerPocketBall(id, false);
+                    pocketedTime = Time.time;
+                    return true;
+                }
+                else if (A.y < 0.001f)
+                {
+                    _sign_pos.x = Mathf.Sign(A.x);
+                    _sign_pos.z = Mathf.Sign(A.z);
+                    Vector3 pocketPoint;
+                    float radius;
+                    if (closest_vFF)
+                    {
+                        pocketPoint = k_vFF2;
+                        radius = k_INNER_RADIUS_SIDE2;
+                    }
+                    else
+                    {
+                        pocketPoint = k_vFF;
+                        radius = k_INNER_RADIUS_SIDE;
+                    }
+                    Vector3 railDir = absA - pocketPoint;
+                    railDir.y = 0;
+                    if (Vector3.Dot(absA, railDir) < 0) // only collide with pocket entrance
+                    {
+                        railPoint = pocketPoint + railDir.normalized * radius;
+                        railPoint = Vector3.Scale(railPoint, _sign_pos);
+                        railPoint.y = Mathf.Min(-k_BALL_RADIUS, A.y);
+                        transitionCollision(id, ref balls_V[id]);
+                    }
+                }
+            }
+#endif
+            
         }
 
         if (absA.z > tableEdge.y)
@@ -2705,6 +2972,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 
         _sign_pos.x = Mathf.Sign(newPos.x);
         _sign_pos.z = Mathf.Sign(newPos.z);
+#if EIJIS_DISABLE_POCKET
+        byte pocket_mask_by_sign = pocket_mask_by_signs[((0 > _sign_pos.x && 0 > _sign_pos.z) ? 3 : (0 > _sign_pos.x ? 2 : (0 > _sign_pos.z ? 1 : 0)))];
+#endif
         newPos = Vector3.Scale(newPos, _sign_pos);
         Vector3 newPosPR = newPos;
         newPosPR.x += k_BALL_RADIUS;
@@ -2765,16 +3035,252 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         //    _phy_table_init();
 #endif
 
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+        if (id == 0) table._LogInfo($"00 newPos.x > k_vA.x = {newPos.x} > {k_vA.x}");
+#endif
+#if EIJIS_DISABLE_POCKET
+        if (0 == (enable_pockets & pocket_mask_by_sign & pocket_mask_sides) ||
+            newPos.x > k_vA.x) // Major Regions
+#else        
         if (newPos.x > k_vA.x) // Major Regions
+#endif
         {
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+            if (id == 0) table._LogInfo($"01 newPos.x > newPos.z + k_MINOR_REGION_CONST = {newPos.x} > {newPos.z} + {k_MINOR_REGION_CONST}");
+#endif
             if (newPos.x > newPos.z + k_MINOR_REGION_CONST) // Minor B
             {
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                if (id == 0) table._LogInfo($"02 newPos.z > k_vC.z = {newPos.z} > {k_vC.z}");
+#endif
+#if EIJIS_DISABLE_POCKET
+                if (0 == (enable_pockets & pocket_mask_by_sign & pocket_mask_corners) ||
+                    newPos.z < k_vC.z)
+#else        
                 if (newPos.z < k_vC.z)
+#endif
                 {
                     // Region H
 #if HT8B_DRAW_REGIONS
                     Debug.DrawLine(new Vector3(0.0f, 0.0f, 0.0f), new Vector3(k_TABLE_WIDTH, 0.0f, 0.0f), Color.red);
                     Debug.DrawLine(k_vC, k_vC + k_vC_vW_normal, Color.red);
+#endif
+#if EIJIS_OCT_POCKETS
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                    if (id == 0) table._LogInfo($"90 newPos.z > k_vAA.z = {newPos.z} > {k_vAA.z}");
+#endif
+#if EIJIS_DISABLE_POCKET
+                    if (0 == (enable_pockets & pocket_mask_by_sign & pocket_mask_additional_sides) ||
+                        newPos.z > k_vAA.z)
+#else        
+                    if (newPos.z > k_vAA.z)
+#endif
+                    {
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                        if (id == 0) table._LogInfo($"03 newPos.x > k_TABLE_WIDTH - k_BALL_RADIUS = {newPos.x} > {k_TABLE_WIDTH} - {k_BALL_RADIUS}");
+#endif
+                        if (newPos.x > k_TABLE_WIDTH - k_BALL_RADIUS)
+                        {
+                            // Static resolution
+                            newPos.x = k_TABLE_WIDTH - k_BALL_RADIUS;
+                            N = k_vC_vW_normal;
+                            // Dynamic
+                            _phy_bounce_cushion(ref newVel, ref newAngVel, id, Vector3.Scale(N, _sign_pos));
+                            shouldBounce = true;
+#if HT8B_DRAW_REGIONS
+                            if (id == 0) Debug.Log("Region H");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region H");
+#endif
+                        }
+                    }
+                    else
+                    {
+                        Vector3 point = k_vAA;
+                        //turn point cylinder-like
+                        point.y = newPos.y;
+                        a_to_v = newPos - point;
+
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                        if (id == 0) table._LogInfo($"91 Vector3.Dot(a_to_v, k_vAA_vDD) > 0.0f = {Vector3.Dot(a_to_v, k_vAA_vDD)}");
+#endif
+                        if (Vector3.Dot(a_to_v, k_vAA_vDD) > 0.0f)
+                        {
+                            point = k_vDD;
+                            //turn point cylinder-like
+                            point.y = newPos.y;
+                            a_to_v = newPos - point;
+
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                            if (id == 0) table._LogInfo($"92 Vector3.Dot(a_to_v, k_vAA_vDD) > 0.0f = {Vector3.Dot(a_to_v, k_vAA_vDD)}");
+#endif
+                            if (Vector3.Dot(a_to_v, k_vAA_vDD) > 0.0f)
+                            {
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                                if (id == 0) table._LogInfo($"93 newPos.x > k_pKK.x = {newPos.x} > {k_pKK.x}");
+#endif
+                                if (newPos.x > k_pKK.x)
+                                {
+                                    // Region EE
+
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                                    if (id == 0) table._LogInfo($"94 newPosPR.z > k_pKK.z = {newPosPR.z} > {k_pKK.z}");
+#endif
+                                    if (newPosPR.z > k_pKK.z)
+                                    {
+                                        // Static resolution
+                                        newPos.z = k_pKK.z - k_BALL_RADIUS;
+                                        N = -k_vAA_vDD_normal;
+                                        
+                                        // Dynamic
+                                        _phy_bounce_cushion(ref newVel, ref newAngVel, id, Vector3.Scale(N, _sign_pos));
+                                        shouldBounce = true;
+#if HT8B_DRAW_REGIONS
+                                        if (id == 0) Debug.Log("Region EE");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                        if (id == 0) table._LogInfo("Region EE");
+#endif
+                                    }
+                                    //two collisions can take place here, I don't know a good way to divide it into regions.
+                                    {
+                                        Vector3 cornerpoint;
+                                        float radiussq;
+                                        float radius;
+                                        if (furthest_vFF)
+                                        {
+                                            cornerpoint = k_vFF2;
+                                            radiussq = k_INNER_RADIUS_SIDE_SQ2;
+                                            radius = k_INNER_RADIUS_SIDE2;
+                                        }
+                                        else
+                                        {
+                                            cornerpoint = k_vFF;
+                                            radiussq = k_INNER_RADIUS_SIDE_SQ;
+                                            radius = k_INNER_RADIUS_SIDE;
+                                        }
+                                        Vector3 toPocketEdge = newPos - cornerpoint;
+                                        toPocketEdge.y = cornerpoint.y; // flatten the calculation
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                                        if (id == 0) table._LogInfo($"95 Vector3.Dot(toPocketEdge, cornerpoint) > 0 = {Vector3.Dot(toPocketEdge, cornerpoint)}");
+#endif
+                                        if (Vector3.Dot(toPocketEdge, cornerpoint) > 0)
+                                        {
+#if HT8B_DRAW_REGIONS
+                                            if (id == 0) Debug.Log("Region EE (Over Side Pocket)");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                            if (id == 0) table._LogInfo("Region EE (Over Side Pocket)");
+#endif
+                                            // actually above the pocket itself, collision for the back of it if you jump over it
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                                            if (id == 0) table._LogInfo($"96 toPocketEdge.sqrMagnitude + k_BALL_DSQR > radiussq = {toPocketEdge.sqrMagnitude} + {k_BALL_DSQR} > {radiussq}");
+#endif
+                                            if (toPocketEdge.sqrMagnitude + k_BALL_DSQR > radiussq)
+                                            {
+                                                Vector3 pocketNormal = toPocketEdge.normalized;
+                                                // Static resolution
+                                                float y = newPos.y;
+                                                newPos = cornerpoint + pocketNormal * (radius - k_BALL_RADIUS);
+                                                newPos.y = y;
+                                                N = -pocketNormal;
+
+                                                // Dynamic
+                                                _phy_bounce_cushion(ref newVel, ref newAngVel, id, Vector3.Scale(N, _sign_pos), true);
+                                                shouldBounce = true;
+                                            }
+                                        }
+                                        
+                                    }
+                                }
+                                else
+                                {
+                                    // Region DD ( VORONI )
+                                    
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                                    if (id == 0) table._LogInfo($"97 a_to_v.magnitude < r_k_CUSHION_RADIUS = {a_to_v.magnitude} < {r_k_CUSHION_RADIUS}");
+#endif
+                                    if (a_to_v.magnitude < r_k_CUSHION_RADIUS)
+                                    {
+                                        // Static resolution
+                                        N = a_to_v.normalized;
+                                        float y = newPos.y;
+                                        newPos = k_vDD + N * r_k_CUSHION_RADIUS;
+                                        newPos.y = y;
+
+                                        // Dynamic
+                                        _phy_bounce_cushion(ref newVel, ref newAngVel, id, Vector3.Scale(N, _sign_pos));
+                                        shouldBounce = true;
+#if HT8B_DRAW_REGIONS
+                                        if (id == 0) Debug.Log("Region DD ( VORONI )");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                        if (id == 0) table._LogInfo("Region DD ( VORONI )");
+#endif
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // Region CC
+                            
+                                a_to_v = newPos - k_pLL;
+                            
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                                if (id == 0) table._LogInfo($"98 Vector3.Dot(k_vAA_vDD_normal, a_to_v) > k_BALL_RADIUS = {Vector3.Dot(k_vAA_vDD_normal, a_to_v)} < {k_BALL_RADIUS}");
+#endif
+                                if (Vector3.Dot(k_vAA_vDD_normal, a_to_v) < k_BALL_RADIUS)
+                                {
+                                    // Static resolution
+                                    dot = Vector3.Dot(a_to_v, k_vAA_vDD);
+                                    float y = newPos.y;
+                                    newPos = k_pLL + dot * k_vAA_vDD + k_vAA_vDD_normal * k_BALL_RADIUS;
+                                    newPos.y = y;
+                                    N = k_vAA_vDD_normal;
+
+                                    // Dynamic
+                                    _phy_bounce_cushion(ref newVel, ref newAngVel, id, Vector3.Scale(N, _sign_pos));
+                                    shouldBounce = true;
+#if HT8B_DRAW_REGIONS
+                                    if (id == 0) Debug.Log("Region CC");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                    if (id == 0) table._LogInfo("Region CC");
+#endif
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Region BB ( VORONI )
+
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                            if (id == 0) table._LogInfo($"99 a_to_v.magnitude < r_k_CUSHION_RADIUS = {a_to_v.magnitude} < {r_k_CUSHION_RADIUS}");
+#endif
+                            if (a_to_v.magnitude < r_k_CUSHION_RADIUS)
+                            {
+                                // Static resolution
+                                N = a_to_v.normalized;
+                                float y = newPos.y;
+                                newPos = k_vAA + N * r_k_CUSHION_RADIUS;
+                                newPos.y = y;
+
+                                // Dynamic
+                                _phy_bounce_cushion(ref newVel, ref newAngVel, id, Vector3.Scale(N, _sign_pos));
+                                shouldBounce = true;
+#if HT8B_DRAW_REGIONS
+                                if (id == 0) Debug.Log("Region BB ( VORONI )");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                if (id == 0) table._LogInfo("Region BB ( VORONI )");
+#endif
+                            }
+                        }
+                    }
+#else
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                    if (id == 0) table._LogInfo($"03 newPos.x > k_TABLE_WIDTH - k_BALL_RADIUS = {newPos.x} > {k_TABLE_WIDTH} - {k_BALL_RADIUS}");
 #endif
                     if (newPos.x > k_TABLE_WIDTH - k_BALL_RADIUS)
                     {
@@ -2787,7 +3293,11 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                         if (id == 0) Debug.Log("Region H");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                        if (id == 0) table._LogInfo("Region H");
+#endif
                     }
+#endif
                 }
                 else
                 {
@@ -2796,12 +3306,18 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                     point.y = newPos.y;
                     a_to_v = newPos - point;
 
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                    if (id == 0) table._LogInfo($"10 Vector3.Dot(a_to_v, k_vB_vY) > 0.0f = {Vector3.Dot(a_to_v, k_vB_vY)}");
+#endif
                     if (Vector3.Dot(a_to_v, k_vB_vY) > 0.0f)
                     {
                         // Region I ( VORONI ) (NEAR CORNER POCKET)
 #if HT8B_DRAW_REGIONS
                         Debug.DrawLine(k_vC, k_pR, Color.green);
                         Debug.DrawLine(k_vC, k_pQ, Color.green);
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                        if (id == 0) table._LogInfo($"11 a_to_v.magnitude < r_k_CUSHION_RADIUS = {a_to_v.magnitude} < {r_k_CUSHION_RADIUS}");
 #endif
                         if (a_to_v.magnitude < r_k_CUSHION_RADIUS)
                         {
@@ -2817,6 +3333,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region I ( VORONI ) (NEAR CORNER POCKET)");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region I ( VORONI ) (NEAR CORNER POCKET)");
+#endif
                         }
                     }
                     else
@@ -2828,6 +3347,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #endif
                         a_to_v = newPos - k_pQ;
 
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION_TRACE
+                        if (id == 0) table._LogInfo($"12 Vector3.Dot(k_vC_vZ_normal, a_to_v) > k_BALL_RADIUS = {Vector3.Dot(k_vC_vZ_normal, a_to_v)} < {k_BALL_RADIUS}");
+#endif
                         if (Vector3.Dot(k_vC_vZ_normal, a_to_v) < k_BALL_RADIUS)
                         {
                             // Static resolution
@@ -2842,6 +3364,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                             shouldBounce = true;
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region J (Inside Corner Pocket)");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region J (Inside Corner Pocket)");
 #endif
                         }
                         //two collisions can take place here, I don't know a good way to divide it into regions.
@@ -2868,6 +3393,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                                 if (id == 0) Debug.Log("Region J (Over Corner Pocket)");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                if (id == 0) table._LogInfo("Region J (Over Corner Pocket)");
+#endif
                                 // actually above the pocket itself, collision for the back of it if you jump over it
                                 if (toPocketEdge.sqrMagnitude + k_BALL_DSQR > radiussq)
                                 {
@@ -2889,7 +3417,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
             }
             else // Minor A
             {
+#if EIJIS_DISABLE_POCKET
+                if (0 == (enable_pockets & pocket_mask_by_sign & pocket_mask_corners) ||
+                    newPos.x < k_vB.x)
+#else        
                 if (newPos.x < k_vB.x)
+#endif
                 {
                     // Region A
 #if HT8B_DRAW_REGIONS
@@ -2905,7 +3438,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                         V.y = 0.0f;
                         V.z = _V.x;
 
+#if EIJIS_DISABLE_POCKET
+                        if (0 != (enable_pockets & pocket_mask_by_sign & pocket_mask_corners) &&
+                            newPos.z > k_vA.z)
+#else        
                         if (newPos.z > k_vA.z)
+#endif
                         {
                             if (Vector3.Dot(V, a_to_v) > 0.0f)
                             {
@@ -2922,6 +3460,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                                 if (id == 0) Debug.Log("Region C ( Delegated )");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                if (id == 0) table._LogInfo("Region C ( Delegated )");
+#endif
                             }
                             else
                             {
@@ -2933,6 +3474,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                                 shouldBounce = true;
 #if HT8B_DRAW_REGIONS
                                 if (id == 0) Debug.Log("Region A II");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                if (id == 0) table._LogInfo("Region A II");
 #endif
                             }
                         }
@@ -2947,6 +3491,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                             shouldBounce = true;
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region A");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region A");
 #endif
                         }
                     }
@@ -2979,6 +3526,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region F ( VORONI ) (NEAR CORNER POCKET)");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region F ( VORONI ) (NEAR CORNER POCKET)");
+#endif
                         }
                     }
                     else
@@ -3005,6 +3555,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region G (Inside Corner Pocket)");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region G (Inside Corner Pocket)");
+#endif
                         }
                         //two collisions can take place here, I don't know a good way to divide it into regions.
                         {
@@ -3029,6 +3582,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                             {
 #if HT8B_DRAW_REGIONS
                                 if (id == 0) Debug.Log("Region G (Over Corner Pocket)");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                if (id == 0) table._LogInfo("Region G (Over Corner Pocket)");
 #endif
                                 // actually above the pocket itself, collision for the back of it if you jump over it
                                 if (toPocketEdge.sqrMagnitude + k_BALL_DSQR > radiussq)
@@ -3084,6 +3640,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region E");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region E");
+#endif
                         }
                         //two collisions can take place here, I don't know a good way to divide it into regions.
                         {
@@ -3108,6 +3667,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                             {
 #if HT8B_DRAW_REGIONS
                                 if (id == 0) Debug.Log("Region E (Over Side Pocket)");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                                if (id == 0) table._LogInfo("Region E (Over Side Pocket)");
 #endif
                                 // actually above the pocket itself, collision for the back of it if you jump over it
                                 if (toPocketEdge.sqrMagnitude + k_BALL_DSQR > radiussq)
@@ -3147,6 +3709,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                             if (id == 0) Debug.Log("Region D ( VORONI )");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                            if (id == 0) table._LogInfo("Region D ( VORONI )");
+#endif
                         }
                     }
                 }
@@ -3175,6 +3740,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
 #if HT8B_DRAW_REGIONS
                         if (id == 0) Debug.Log("Region C");
 #endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                        if (id == 0) table._LogInfo("Region C");
+#endif
                     }
                 }
             }
@@ -3198,6 +3766,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                     shouldBounce = true;
 #if HT8B_DRAW_REGIONS
                     if (id == 0) Debug.Log("Region B ( VORONI )");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS_CUSHION_REGION
+                    if (id == 0) table._LogInfo("Region B ( VORONI )");
+#endif
+#if DEBUG_EIJIS_OCT_POCKETS
+                    table._LogInfo($"enable_pockets = 0x{enable_pockets:X2}, pocket_mask_by_sign = 0x{pocket_mask_by_sign:X2}, & = {(enable_pockets & pocket_mask_by_sign):X2}");
 #endif
                 }
             }

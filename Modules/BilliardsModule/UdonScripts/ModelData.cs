@@ -1,4 +1,6 @@
-﻿using UdonSharp;
+﻿#define EIJIS_DISABLE_POCKET
+
+using UdonSharp;
 using UnityEngine;
 using UnityEditor;
 
@@ -32,6 +34,11 @@ public class ModelData : UdonSharpBehaviour
         [SerializeField] public Vector3 cornerPocket2 = new Vector3(1.12f, 0, 0.66f);
         [SerializeField] public Vector3 sidePocket = new Vector3(0, 0, 0.665f);
         [SerializeField] public Vector3 sidePocket2 = new Vector3(0, 0, 0.7f);
+#if EIJIS_DISABLE_POCKET
+        
+        [Tooltip("0-3 Corner pockets es-ws-ns-ne (Head is North), 4-5 Side pockets e-w (6-7 additional side pockets s-n)")]
+        [SerializeField] public bool[] disablePockets;
+#endif
 
         [Header("Ball-Table Coefficients:")]
 

@@ -6,6 +6,9 @@
 #define HT8B_DEBUGGER
 #endif
 
+#define EIJIS_OCT_POCKETS
+#define EIJIS_DISABLE_POCKET
+
 using UdonSharp;
 using UnityEngine;
 using UnityEngine.UI;
@@ -42,6 +45,13 @@ public class BilliardsModule : UdonSharpBehaviour
     [NonSerialized] public float k_RAIL_HEIGHT_LOWER;
     [NonSerialized] public float k_RAIL_DEPTH_WIDTH;
     [NonSerialized] public float k_RAIL_DEPTH_HEIGHT;
+#if EIJIS_DISABLE_POCKET
+#if EIJIS_OCT_POCKETS
+    [NonSerialized] public bool[] disable_pockets = new bool[8]; // 0-3 Corner pockets es-ws-ns-ne (Head is North), 4-5 Side pockets e-w (6-7 additional side pockets s-n)
+#else    
+    [NonSerialized] public bool[] disable_pockets = new bool[6]; // 0-3 Corner pockets es-ws-ns-ne (Head is North), 4-5 Side pockets e-w
+#endif
+#endif
     // advanced physics  variables
     [NonSerialized] public float k_F_SLIDE; // bt_CoefSlide
     [NonSerialized] public float k_F_ROLL; // bt_CoefRoll
@@ -2216,6 +2226,23 @@ public class BilliardsModule : UdonSharpBehaviour
         k_vF = data.sidePocket;
         k_vE2 = data.cornerPocket2;
         k_vF2 = data.sidePocket2;
+#if EIJIS_DISABLE_POCKET
+#if EIJIS_OCT_POCKETS
+        for (int i = 0; i < 8; i++)
+#else    
+        for (int i = 0; i < 6; i++)
+#endif
+        {
+            if (i < data.disablePockets.Length)
+            {
+                disable_pockets[i] = data.disablePockets[i];
+            }
+            else
+            {
+                disable_pockets[i] = 5 < i;
+            }
+        }
+#endif
 
         //advanced physics
         useRailLower = data.useRailHeightLower;
