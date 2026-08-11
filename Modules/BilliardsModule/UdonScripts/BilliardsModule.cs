@@ -358,8 +358,9 @@ public class BilliardsModule : UdonSharpBehaviour
 
         infReset.text = string.Empty;
 
-        debugger = this.transform.Find("debugger").gameObject;
-        debugger.SetActive(true);
+        Transform debuggerT = transform.Find("debugger");
+        if (debuggerT) debugger = debuggerT.gameObject;
+        if (debugger) debugger.SetActive(true);
 
         Transform gdisplay = guideline.transform.GetChild(0);
         if (gdisplay)
@@ -3318,7 +3319,7 @@ public class BilliardsModule : UdonSharpBehaviour
     {
         for (int i = 0; i < cueControllers.Length; i++) cueControllers[i]._RefreshRenderer();
         balls[0].transform.parent.gameObject.SetActive(!localPlayerDistant);
-        debugger.SetActive(!localPlayerDistant);
+        if (debugger) debugger.SetActive(!localPlayerDistant);
         menuManager._RefreshLobby();
         graphicsManager._UpdateLOD();
         auto_pocketblockers.SetActive(is4Ball);
@@ -3377,6 +3378,7 @@ public void _RedrawDebugger() { }
 
     private void _log(string ln)
     {
+        if (!debugger) return;
         Debug.Log("[<color=\"#B5438F\">BilliardsModule</color>] " + ln);
 
         LOG_LINES[LOG_PTR++] = "[<color=\"#B5438F\">BilliardsModule</color>] " + ln + "\n";
@@ -3397,6 +3399,7 @@ public void _RedrawDebugger() { }
 
     private void redrawDebugger()
     {
+        if (!debugger) return;
         string output = "BilliardsModule ";
 
         // Add information about game state:
