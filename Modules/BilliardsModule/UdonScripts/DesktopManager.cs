@@ -30,6 +30,7 @@ public class DesktopManager : UdonSharpBehaviour
     private bool holdingCue;
     private bool inUI;
     private bool repositionMode;
+    private bool waitingMouse0Release = false;
 
     private bool isShooting;
     private bool isRepositioning;
@@ -156,7 +157,21 @@ public class DesktopManager : UdonSharpBehaviour
                     renderCuePosition(initialShotDirection);
                     stopShooting();
                 }
-                repositionMode = !repositionMode;
+                if (repositionMode)
+                {
+                    if (isRepositioning)
+                    {
+                        waitingMouse0Release = true;
+                    }
+                    else
+                    {
+                        repositionMode = false;
+                    }
+                }
+                else
+                {
+                    repositionMode = true;
+                }
             }
         }
 
@@ -206,6 +221,11 @@ public class DesktopManager : UdonSharpBehaviour
                 {
                     isRepositioning = false;
                     stopRepositioning();
+                    if (waitingMouse0Release)
+                    {
+                        repositionMode = false;
+                        waitingMouse0Release = false;
+                    }
                 }
             }
             else
