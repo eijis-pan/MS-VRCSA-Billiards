@@ -6,7 +6,7 @@ using UnityEngine;
 [UdonBehaviourSyncMode(BehaviourSyncMode.NoVariableSync)]
 public class AdvancedPhysicsManager : UdonSharpBehaviour
 {
-    public string PHYSICSNAME = "<color=#FFD700>Advanced V0.6X</color>";
+    public string PHYSICSNAME = "<color=#FFD700>Advanced V0.6Y</color>";
     [SerializeField] AudioClip[] hitSounds;
     [SerializeField] AudioClip[] bounceSounds;
     [SerializeField] AudioClip[] cushionSounds;
@@ -44,6 +44,7 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
     [NonSerializedAttribute] public float K_F_CUSHION = 0.2f;
     [NonSerializedAttribute][Range(0.5f, 0.7f)] public float K_BOUNCE_FACTOR = 0.5f;                                // COR Ball-Slate.                          (ball-table)    [Update Velocity]
     [NonSerializedAttribute] public bool isDRate = true;
+    [NonSerializedAttribute] public float sideSpinPatchInUse; // Side-spin contact-patch radius
     public AnimationCurve RubberF;                                                                                  // Set this animation curve to 1 in both keys in case if you dont know what you are doing.
 
     // Ball <-> Cushion Variables
@@ -71,6 +72,7 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
     [NonSerializedAttribute] public float Ydamp = 0.14f;
     [NonSerializedAttribute] public float DeltaPtune = 0.01f;
     [NonSerializedAttribute] public int maxStepsTune = 1000;
+    private const int kMinCollisionSteps = 32; // Floor on integration steps per cushion collision
     [NonSerializedAttribute] public float heightRatio = 0.635f;  // for debuging
     [NonSerializedAttribute] public float cushionHeight;         // ReadOnly
 
@@ -1362,15 +1364,16 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         Vector3 v_rel_tangential = v_rel_contact - v_rel_normal * normal;
         float v_rel_tangential_mag = v_rel_tangential.magnitude;
 
-        // Calculate friction coefficient [TP.A14 Page 4]
-        mu = CalculateFrictionCoefficient(v_rel_contact) * muFactor;
+        // Calculate friction coefficient [TP.A14 Page 4] - fed tangential slip speed; the full contact vector also carries the normal approach speed and understates mu.
+        mu = CalculateFrictionCoefficient(v_rel_tangential) * muFactor;
 
         // Calculate the normal impulse J - PAGE 9 FIGURE 4. in Physics Articles, Physics Part 4 The Third Dimension - June 97
-        float denomNormal =
-            (1f / M) + (1f / M) +
-            (R * R * Vector3.Dot(normal, Vector3.Cross(Vector3.Cross(normal, balls_W[id]), normal)) / I) +
-            (R * R * Vector3.Dot(normal, Vector3.Cross(Vector3.Cross(normal, balls_W[i]), normal)) / I);
-        if (Mathf.Abs(denomNormal) < 1e-8f) denomNormal = 1e-8f;
+        //float denomNormal =
+        //    (1f / M) + (1f / M) +
+        //    (R * R * Vector3.Dot(normal, Vector3.Cross(Vector3.Cross(normal, balls_W[id]), normal)) / I) +
+        //    (R * R * Vector3.Dot(normal, Vector3.Cross(Vector3.Cross(normal, balls_W[i]), normal)) / I);
+        //if (Mathf.Abs(denomNormal) < 1e-8f) denomNormal = 1e-8f;
+        float denomNormal = 2f / M;
         float J_normal = -(1f + e) * v_rel_normal / denomNormal;
 
         // Apply the normal impulse to linear velocities
@@ -1692,6 +1695,24 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                 /// Angular Slipping Friction [PARALLEL] (Without K-axis)
                 /// In parallel, K^ = O with 'Vector3.Up'
                 W += (-5.0f * mu_s * g) / (2.0f * R) * t * Vector3.Cross(Vector3.up, nv);
+
+                // Cross(up, nv) is perpendicular to up, so the line above leaves W.y untouched - mirror
+                // the rolling branch's side-spin decay here too, coupled to how much the ball is sliding.
+                if (0.3f > Mathf.Abs(W.y))
+                {
+                    W.y = 0.0f;
+                }
+                else
+                {
+                    float w_perp_slide = (5f * mu_sp * g) / (2f * R);
+
+                    // Contensou-Zhuravlev: a ball that is also sliding can't deliver the full rolling
+                    // decay rate, since contact-patch friction is mostly spent opposing the slide.
+                    float eps = 0.589048f * (sideSpinPatchInUse * R) * Mathf.Abs(W.y);
+                    float slideSpinShare = eps / Mathf.Sqrt(absolute_u0 * absolute_u0 + eps * eps);
+
+                    W.y -= Mathf.Sign(W.y) * w_perp_slide * slideSpinShare * t;
+                }
 
                 ballMoving = true;
             }
@@ -2344,7 +2365,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         totalWork = 0f; // Initialize total work: Represents cumulative energy dissipation as the ball compresses into the cushion.
         int steps = 0;
 
-        deltaP = Mathf.Max((M * Mathf.Abs(V.z)) / maxSteps, deltaP);    // Adaptive impulse size: Ensures that impulse step is appropriate for current velocity and avoids numerical instability.
+        // Min (not Max) so the step is actually capped to kMinCollisionSteps instead of the tuned floor always winning.
+        deltaP = Mathf.Min(deltaP, (M * Mathf.Abs(V.z)) / kMinCollisionSteps);
+        deltaP = Mathf.Max(deltaP, 0.000000001f); // never zero - the loop would not advance
                                                                         //Debug.Log($"[CompressionPhase] START: Initial V.z = {V.z:F4}");
         while (V.z > 0f && steps < maxSteps)    // Iterative compression loop - Runs until either: The velocity into the cushion (V.z) is zero or negative (ball stops or reverses). Or we hit the maximum allowed steps (safety cap).
         {
@@ -2354,7 +2377,7 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
             Vector3 V_next = UpdateVelocity(V, N, M, MUw, MUs, sinθ, cosθ, slip_angle, slip_angle_prime, deltaP, θ);
             Vector3 W_next = UpdateAngularVelocity(W, N, M, R, MUw, MUs, sinθ, cosθ, slip_angle, slip_angle_prime, deltaP);
 
-            float nextDeltaWork = deltaP * Mathf.Abs(V.z) * cosθ;
+            float nextDeltaWork = deltaP * 0.5f * (Mathf.Abs(V.z) + Mathf.Abs(V_next.z)) * cosθ; // Eq 16a trapezoid, was left-endpoint
 
             //Debug.Log($"[CompressionPhase] Step {steps} - V.z = {V.z:F4}, slip_angle = {slip_angle:F4}");
             //Debug.Log($"  - next V.z = {V_next.z:F4}, nextDeltaWork = {nextDeltaWork:F6}");
@@ -2375,6 +2398,8 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                 {
                     refine_deltaP /= 2f;
 
+                    float Vz_before = V_refine.z;
+
                     UpdateSlipAngles(V_refine, W_refine, N, R, sinθ, cosθ, out float slip_angle_refine, out float slip_angle_prime_refine, θ);
 
                     Vector3 V_test = UpdateVelocity(V_refine, N, M, MUw, MUs, sinθ, cosθ, slip_angle_refine, slip_angle_prime_refine, refine_deltaP, θ);
@@ -2389,7 +2414,7 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
                     V_refine = V_test;
                     W_refine = W_test;
 
-                    WzI_refine += refine_deltaP * Mathf.Abs(V_refine.z) * cosθ;
+                    WzI_refine += refine_deltaP * 0.5f * (Mathf.Abs(Vz_before) + Mathf.Abs(V_refine.z)) * cosθ; // Eq 16a trapezoid, was right-endpoint-only
                 }
                 // Apply refined results and exit:
 
@@ -2429,7 +2454,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         int steps = 0;
 
         // Adaptive impulse step: Ensures a safe and effective impulse step based on required rebound energy.
-        deltaP = Mathf.Max(targetWork / maxSteps, deltaP);
+        // Same fault as CompressionPhase; targetWork/maxSteps was an energy, not an impulse - use sqrt(2*M*targetWork) instead.
+        deltaP = Mathf.Min(deltaP, Mathf.Sqrt(2f * M * Mathf.Max(targetWork, 0f)) / kMinCollisionSteps);
+        deltaP = Mathf.Max(deltaP, 0.000000001f);
 
         //Debug.Log($"[RestitutionPhase] START: targetWork = {targetWork:F6}, initial V.z = {V.z}");
 
@@ -2440,7 +2467,9 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
             UpdateSlipAngles(V, W, N, R, sinθ, cosθ, out float slip_angle, out float slip_angle_prime, θ); // Computes friction directions — needed to determine how rebound impulses affect velocity and spin.
 
             // Estimate rebound energy for the next impulse:
-            float nextDeltaWork = deltaP * Mathf.Abs(V.z) * cosθ; // Estimate how much energy will be restored by applying this impulse.
+            Vector3 V_next = UpdateVelocity(V, N, M, MUw, MUs, sinθ, cosθ, slip_angle, slip_angle_prime, deltaP, θ);
+            Vector3 W_next = UpdateAngularVelocity(W, N, M, R, MUw, MUs, sinθ, cosθ, slip_angle, slip_angle_prime, deltaP);
+            float nextDeltaWork = deltaP * 0.5f * (Mathf.Abs(V.z) + Mathf.Abs(V_next.z)) * cosθ; // Eq 16a trapezoid, was left-endpoint
 
             //Debug.Log($"[RestitutionPhase] Step {steps} - V.z = {V.z:F4}, W = {W}, slipAngle = {slip_angle:F4}, slipAngle' = {slip_angle_prime:F4}");
             //Debug.Log($"  - totalWork = {totalWork:F6}, nextDeltaWork = {nextDeltaWork:F6}, combined = {totalWork + nextDeltaWork:F6}");
@@ -2464,8 +2493,8 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
             }
 
             // Normal step (If not overshooting, apply normal impulse step:)
-            V = UpdateVelocity(V, N, M, MUw, MUs, sinθ, cosθ, slip_angle, slip_angle_prime, deltaP, θ);
-            W = UpdateAngularVelocity(W, N, M, R, MUw, MUs, sinθ, cosθ, slip_angle, slip_angle_prime, deltaP);
+            V = V_next;
+            W = W_next;
 
             totalWork += nextDeltaWork;
 
@@ -2654,10 +2683,12 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         // Step 1: Check if ball is approaching cushion
         // Determine dominant direction of the cushion normal
 
-        staticSlope = Mathf.Asin((h - R) / R);
-        slope = P / R;
+        // Clamp Asin's inputs to [-1,1] - out-of-domain gives NaN and poisons V/W for the whole bounce.
+        staticSlope = Mathf.Asin(Mathf.Clamp((h - R) / R, -1f, 1f));
+        slope = Mathf.Clamp(P / R, -1f, 1f);
         θ = Mathf.Asin(slope);
-        θ = Mathf.Min(θ, 0.4f);
+        // Widened to 0.45 rad and made symmetric - 0.4 rad was too tight for a 0.700*D snooker rail, and one-sided.
+        θ = Mathf.Clamp(θ, -0.45f, 0.45f);
         sinθ = Mathf.Sin(θ);
         cosθ = Mathf.Cos(θ);
 
@@ -2956,6 +2987,13 @@ public class AdvancedPhysicsManager : UdonSharpBehaviour
         k_F_SPIN = table.k_F_SPIN;
         k_F_SPIN_RATE = table.k_F_SPIN_RATE;
         isDRate = table.isDRate;
+
+        // Contact patch, from Han 2005 Table 1's measured frictional moment (Mz = 3.82e-4 Nm on his
+        // 230 g, 65.5 mm carom ball), rescaled to this table's actual ball by Hertzian contact - patch
+        // radius goes as (mass * radius)^(1/3) - so American/snooker/pool balls each get their own value.
+        float hanRho = 0.003682f, hanMass = 0.230f, hanRadius = 0.03275f;
+        float hanScale = Mathf.Pow((k_BALL_MASS * k_BALL_RADIUS) / (hanMass * hanRadius), 1f / 3f);
+        sideSpinPatchInUse = Mathf.Clamp((hanRho * hanScale) / k_BALL_RADIUS, 0f, 1f);
         K_BOUNCE_FACTOR = table.K_BOUNCE_FACTOR;
         isMatModel = table.isMatModel;
         k_E_C = table.k_E_C;
